@@ -205,10 +205,24 @@
   let last = { code: null, seen: 0 };
 
   async function onCode(raw, format) {
+    // The setup QR scanned with this page's own camera: take the settings from it.
+    const m = /#(.*\burl=.*)$/.exec(raw);
+    if (m) {
+      const q = new URLSearchParams(m[1]);
+      if (q.get('url') && q.get('key')) {
+        cfg = { url: q.get('url'), key: q.get('key') };
+        store.set('cfg', cfg);
+        beep(true); status('Ρυθμίσεις από QR — έλεγχος…');
+        try { await api('ping'); status('Συνδέθηκε με το Sheet ✓', 'ok'); }
+        catch (e) { beep(false); status(e.message, 'err'); }
+        return;
+      }
+    }
     if (!MOCK && (!cfg || !cfg.url || !cfg.key)) {
       beep(false); status('Διαβάστηκε ' + raw + ' — αλλά λείπουν οι ρυθμίσεις του Sheet (πάτα ⚙ ή άνοιξε τον σύνδεσμο ρύθμισης)', 'err');
       return;
     }
+    if (format === 'qr_code') { status('Αυτό είναι QR, όχι barcode προϊόντος', 'warn'); return; }
     beep(true);
     flash();
     status('Καταγραφή ' + raw + '…');
@@ -279,7 +293,7 @@
       return;
     }
     try {
-      const wanted = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'];
+      const wanted = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'];
       const formats = (await BarcodeDetector.getSupportedFormats()).filter(f => wanted.includes(f));
       const detector = new BarcodeDetector({ formats });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: false,

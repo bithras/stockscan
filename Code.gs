@@ -14,9 +14,17 @@ const HEAD_L = ['Time', 'Barcode', 'Product name', 'Change', 'New qty', 'Source'
 const COL = { barcode: 1, name: 2, sku: 3, qty: 4, updated: 5 };
 const DATE_FMT = 'dd/mm/yyyy hh:mm';
 
+// Leave empty when the script is created from the Sheet (Extensions → Apps Script).
+// For a standalone script (script.google.com → New project) put the Sheet's ID here (the long part of its URL).
+const SHEET_ID = '';
+
+function ss_() {
+  return SHEET_ID ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActive();
+}
+
 /** Run once from the editor: creates the tabs and the app key (shown in the execution log). */
 function setup() {
-  const ss = SpreadsheetApp.getActive();
+  const ss = ss_();
   const p = sheet_(ss, PRODUCTS, HEAD_P);
   p.getRange('A:A').setNumberFormat('@');
   p.getRange('C:C').setNumberFormat('@');
@@ -31,6 +39,9 @@ function setup() {
   if (!key) {
     key = Utilities.getUuid().replace(/-/g, '');
     props.setProperty('API_KEY', key);
+  }
+  if (SHEET_ID && !ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'onSheetEdit')) {
+    ScriptApp.newTrigger('onSheetEdit').forSpreadsheet(SHEET_ID).onEdit().create();
   }
   Logger.log('App key: ' + key);
 }
@@ -55,7 +66,7 @@ function doGet(e) {
   const key = PropertiesService.getScriptProperties().getProperty('API_KEY');
   if (!key || p.key !== key) return ContentService.createTextOutput('Λάθος κλειδί εφαρμογής');
 
-  const sh = SpreadsheetApp.getActive().getSheetByName(PRODUCTS);
+  const sh = ss_().getSheetByName(PRODUCTS);
   const last = sh ? sh.getLastRow() : 0;
   const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, 4).getDisplayValues();
   const cell = v => /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
@@ -97,7 +108,7 @@ function handle_(req) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const sh = SpreadsheetApp.getActive().getSheetByName(PRODUCTS);
+    const sh = ss_().getSheetByName(PRODUCTS);
     if (!sh) throw new Error('Δεν υπάρχει η καρτέλα Products — τρέξε το setup()');
     const row = findRow_(sh, COL.barcode, code);
 
@@ -183,7 +194,7 @@ function toQty_(v) {
 }
 
 function log_(code, name, change, qty, source) {
-  const sh = SpreadsheetApp.getActive().getSheetByName(LOG);
+  const sh = ss_().getSheetByName(LOG);
   if (!sh) return;
   const r = sh.getLastRow() + 1;
   const range = sh.getRange(r, 1, 1, 6);
@@ -243,8 +254,16 @@ function hint_(code) {
   }
 }
 
-/** Simple trigger: logs manual Quantity edits in the Sheet and stamps Last updated. Not fired by the script's own writes. */
+/** Sheet-bound script: simple trigger. Standalone script: setup() installs onSheetEdit instead. */
 function onEdit(e) {
+  if (!SHEET_ID) logManualEdit_(e);
+}
+function onSheetEdit(e) {
+  logManualEdit_(e);
+}
+
+/** Logs manual Quantity edits in the Sheet and stamps Last updated. Not fired by the script's own writes. */
+function logManualEdit_(e) {
   const r = e.range, sh = r.getSheet();
   if (sh.getName() !== PRODUCTS || r.getLastRow() < 2) return;
   const c1 = r.getColumn(), c2 = r.getLastColumn();
