@@ -84,10 +84,16 @@
   <form id="createForm" autocomplete="off">
     <label for="nName">Όνομα προϊόντος</label>
     <input id="nName" required>
+    <div class="row" style="margin-top:8px">
+      <button type="button" class="ghost" id="btnGoogle" style="flex:1">🔎 Αναζήτηση Google</button>
+      <button type="button" class="ghost" id="btnPaste" style="flex:1">📋 Επικόλληση</button>
+    </div>
     <label for="nSku">SKU (προαιρετικό)</label>
     <input id="nSku">
+    <label for="nQty">Ποσότητα</label>
+    <input id="nQty" type="number" inputmode="numeric" min="0" step="1" value="1" required>
     <div class="row" style="margin-top:12px">
-      <button style="flex:1">Αποθήκευση (ποσ. 1)</button>
+      <button style="flex:1">Αποθήκευση</button>
       <button type="button" class="ghost" id="btnCancel">Άκυρο</button>
     </div>
   </form>
@@ -244,24 +250,41 @@
     $('newForm').dataset.barcode = j.barcode;
     $('nName').value = j.hint || '';
     $('nSku').value = '';
+    $('nQty').value = '1';
+    store.set('pending', { barcode: j.barcode, hint: j.hint || '' }); // survives a tab reload while searching
     $('nName').focus();
   }
   function closeNew() {
+    store.set('pending', null);
     $('newForm').hidden = true;
     paused = false; $('cam').classList.remove('paused');
   }
 
   $('createForm').onsubmit = async ev => {
     ev.preventDefault();
+    const q = $('nQty').value.trim();
+    if (!/^\d+$/.test(q)) { status('Γράψε ακέραια ποσότητα', 'err'); return; }
     const btn = ev.target.querySelector('button'); btn.disabled = true;
     try {
-      const j = await api('create', { barcode: $('newForm').dataset.barcode, name: $('nName').value, sku: $('nSku').value, qty: 1 });
+      const j = await api('create', { barcode: $('newForm').dataset.barcode, name: $('nName').value, sku: $('nSku').value, qty: Number(q) });
       closeNew(); showCard(j.product, j.created ? 'νέο' : '+1');
       status(j.note || ('Αποθηκεύτηκε, ποσ. ' + j.product.qty), j.note ? 'warn' : 'ok');
     } catch (e) { status(e.message, 'err'); }
     btn.disabled = false;
   };
   $('btnCancel').onclick = () => { closeNew(); status('Ακυρώθηκε — δεν καταγράφηκε'); };
+
+  // Name lookup: open a Google search for the barcode; the user copies a title there and pastes it here.
+  $('btnGoogle').onclick = () => {
+    window.open('https://www.google.com/search?q=' + encodeURIComponent($('newForm').dataset.barcode), '_blank', 'noopener');
+  };
+  $('btnPaste').onclick = async () => {
+    try {
+      const t = (await navigator.clipboard.readText()).replace(/\s+/g, ' ').trim();
+      if (t) { $('nName').value = t.slice(0, 200); $('nName').focus(); }
+      else status('Το πρόχειρο είναι άδειο', 'warn');
+    } catch (e) { status('Δεν επιτράπηκε η επικόλληση — πάτα παρατεταμένα στο πεδίο και «Επικόλληση»', 'warn'); }
+  };
 
   $('qtyForm').onsubmit = async ev => {
     ev.preventDefault();
@@ -351,6 +374,8 @@
   }
 
   renderRecent();
+  const pending = store.get('pending', null);
+  if (pending && pending.barcode) { showNew(pending); status('Συνέχεια: νέο barcode ' + pending.barcode); }
   if (!cfg && !MOCK) status('Πρώτη φορά: άνοιξε τον σύνδεσμο ρύθμισης ή πάτα ⚙', 'warn');
 })();
 </script>
