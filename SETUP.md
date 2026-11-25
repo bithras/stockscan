@@ -18,6 +18,10 @@ Open this once on each phone, in Chrome:
 The page saves the settings and removes them from the address bar. Then: Chrome menu → **Add to Home screen**.
 Alternative: open the page and enter the URL and key under ⚙.
 
+## CSV export (for Magento later)
+`<WEB APP URL>?format=csv&key=<APP KEY>` downloads the Products tab as CSV (`sku,barcode,name,qty`), always up to date.
+Only rows that have a SKU are included. Add `&all=1` to include every row. Treat the link like the key: anyone who has it can read the list.
+
 ## Updating the script later
 Paste the new code → **Deploy → Manage deployments →** ✎ → Version: **New version** → Deploy. The URL stays the same.
 

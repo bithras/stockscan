@@ -45,8 +45,28 @@ function sheet_(ss, name, head) {
   return sh;
 }
 
-function doGet() {
-  return json_({ ok: true, app: 'barcode-scanner' });
+/**
+ * GET <web app url>?format=csv&key=<app key>  → Products as CSV (sku, barcode, name, qty), always current.
+ * Rows without a SKU are skipped unless &all=1. Without a valid key: refused.
+ */
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  if (p.format !== 'csv') return json_({ ok: true, app: 'barcode-scanner' });
+  const key = PropertiesService.getScriptProperties().getProperty('API_KEY');
+  if (!key || p.key !== key) return ContentService.createTextOutput('Λάθος κλειδί εφαρμογής');
+
+  const sh = SpreadsheetApp.getActive().getSheetByName(PRODUCTS);
+  const last = sh ? sh.getLastRow() : 0;
+  const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, 4).getDisplayValues();
+  const cell = v => /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  const lines = ['sku,barcode,name,qty'];
+  for (const [barcode, name, sku, qty] of rows) {
+    if (!barcode || (!sku && p.all !== '1')) continue;
+    lines.push([sku, barcode, name, qty].map(cell).join(','));
+  }
+  return ContentService.createTextOutput(lines.join('\r\n') + '\r\n')
+    .setMimeType(ContentService.MimeType.CSV)
+    .downloadAsFile('products-barcodes.csv');
 }
 
 function doPost(e) {

@@ -205,6 +205,10 @@
   let last = { code: null, seen: 0 };
 
   async function onCode(raw, format) {
+    if (!MOCK && (!cfg || !cfg.url || !cfg.key)) {
+      beep(false); status('Διαβάστηκε ' + raw + ' — αλλά λείπουν οι ρυθμίσεις του Sheet (πάτα ⚙ ή άνοιξε τον σύνδεσμο ρύθμισης)', 'err');
+      return;
+    }
     beep(true);
     flash();
     status('Καταγραφή ' + raw + '…');
@@ -214,8 +218,8 @@
       showCard(j.product, '+1');
       status(j.warning || ('+1 → ' + j.product.qty), j.warning ? 'warn' : 'ok');
     } catch (e) {
-      last.code = null; // allow an immediate re-scan
-      beep(false); status(e.message, 'err');
+      // Keep last.code: the same code fires again only after it leaves the view (no beep loop on errors).
+      beep(false); status(raw + ': ' + e.message, 'err');
     }
   }
 
