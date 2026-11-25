@@ -117,9 +117,13 @@ function handle_(req) {
         res = row ? { ok: true, product: read_(sh, row) } : { ok: true, unknown: true, barcode: code };
         break;
 
-      case 'scan':
-        res = row ? { ok: true, product: add_(sh, row, 1) } : { ok: true, unknown: true, barcode: code };
+      case 'scan': {
+        const d = Number(req.delta) === -1 ? -1 : 1; // remove mode sends delta -1
+        if (row) res = { ok: true, product: add_(sh, row, d) };
+        else if (d < 0) throw new Error('Το ' + code + ' δεν υπάρχει στη λίστα — δεν αφαιρέθηκε τίποτα');
+        else res = { ok: true, unknown: true, barcode: code };
         break;
+      }
 
       case 'create': {
         if (row) { // someone created it in the meantime → count this one as a scan
@@ -167,11 +171,13 @@ function handle_(req) {
 
 function add_(sh, row, n) {
   const cell = sh.getRange(row, COL.qty);
-  const q = (Number(cell.getValue()) || 0) + n; // current Sheet value, never a cached one
+  const cur = Number(cell.getValue()) || 0; // current Sheet value, never a cached one
+  const q = cur + n;
+  if (q < 0) throw new Error('Η ποσότητα είναι ήδη ' + cur + ' — δεν αφαιρέθηκε');
   cell.setValue(q);
   sh.getRange(row, COL.updated).setValue(new Date());
   const p = read_(sh, row);
-  log_(p.barcode, p.name, '+' + n, q, 'app');
+  log_(p.barcode, p.name, (n > 0 ? '+' : '') + n, q, 'app');
   return p;
 }
 

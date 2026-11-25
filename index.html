@@ -31,6 +31,12 @@
   .row { display:flex; gap:8px; }
   .row input { flex:1; }
   #status { min-height:24px; margin-top:10px; font-size:15px; }
+  .modes { display:flex; gap:8px; margin-bottom:10px; }
+  .modes button { flex:1; background:transparent; border:2px solid var(--line); color:var(--muted); font-size:17px; }
+  .modes button.on.add { background:var(--ok); border-color:var(--ok); color:#06210f; }
+  .modes button.on.rem { background:var(--err); border-color:var(--err); color:#fff; }
+  body.remove #cam { box-shadow:0 0 0 3px var(--err); }
+  .badge.rem { background:var(--err); color:#fff; }
   #status.ok { color:var(--ok); } #status.warn { color:var(--warn); } #status.err { color:var(--err); }
   .pname { font-size:20px; font-weight:700; margin:0 0 2px; }
   .meta { color:var(--muted); font-size:13px; word-break:break-all; }
@@ -52,6 +58,11 @@
   <h1>Παραλαβή προϊόντων</h1>
   <button class="ghost" id="btnSettings" aria-label="Ρυθμίσεις">⚙</button>
 </header>
+
+<div class="modes">
+  <button type="button" id="modeAdd" class="add">➕ Προσθήκη</button>
+  <button type="button" id="modeRem" class="rem">➖ Αφαίρεση</button>
+</div>
 
 <div id="cam">
   <video id="video" playsinline muted></video>
@@ -87,6 +98,7 @@
     <div class="row" style="margin-top:8px">
       <button type="button" class="ghost" id="btnGoogle" style="flex:1">🔎 Αναζήτηση Google</button>
       <button type="button" class="ghost" id="btnPaste" style="flex:1">📋 Επικόλληση</button>
+      <button type="button" class="ghost" id="btnClear" aria-label="Καθαρισμός ονόματος">✕</button>
     </div>
     <label for="nSku">SKU (προαιρετικό)</label>
     <input id="nSku">
@@ -141,7 +153,7 @@
     return p;
   }
   async function call(action, data) {
-    if (MOCK) return mock(action, data);
+    if (MOCK) { const j = await mock(action, data); if (!j.ok) throw new Error(j.error); return j; }
     if (!cfg || !cfg.url || !cfg.key) throw new Error('Λείπουν οι ρυθμίσεις — πάτα ⚙');
     let r;
     try {
@@ -168,12 +180,12 @@
   }
 
   let current = null;
-  function showCard(p, badge) {
+  function showCard(p, badge, removed) {
     current = p;
     $('newForm').hidden = true; $('card').hidden = false;
     $('cName').innerHTML = '';
     $('cName').append(p.name || '(χωρίς όνομα)');
-    if (badge) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = badge; $('cName').append(b); }
+    if (badge) { const b = document.createElement('span'); b.className = 'badge' + (removed ? ' rem' : ''); b.textContent = badge; $('cName').append(b); }
     $('cMeta').textContent = p.barcode + (p.sku ? ' · SKU ' + p.sku : '');
     $('cQty').value = p.qty;
     addRecent(p);
@@ -233,10 +245,12 @@
     flash();
     status('Καταγραφή ' + raw + '…');
     try {
-      const j = await api('scan', { barcode: raw, format });
+      const delta = mode === 'remove' ? -1 : 1;
+      const j = await api('scan', { barcode: raw, format, delta });
       if (j.unknown) { showNew(j); status(j.warning || 'Νέο barcode — συμπλήρωσε όνομα', j.warning ? 'warn' : ''); return; }
-      showCard(j.product, '+1');
-      status(j.warning || ('+1 → ' + j.product.qty), j.warning ? 'warn' : 'ok');
+      const sign = delta > 0 ? '+1' : '−1';
+      showCard(j.product, sign, delta < 0);
+      status(j.warning || (sign + ' → ' + j.product.qty), j.warning ? 'warn' : 'ok');
     } catch (e) {
       // Keep last.code: the same code fires again only after it leaves the view (no beep loop on errors).
       beep(false); status(raw + ': ' + e.message, 'err');
@@ -273,6 +287,22 @@
     btn.disabled = false;
   };
   $('btnCancel').onclick = () => { closeNew(); status('Ακυρώθηκε — δεν καταγράφηκε'); };
+
+  $('btnClear').onclick = () => { $('nName').value = ''; $('nName').focus(); };
+
+  // Add / remove mode: each scan +1 or −1. Remembered per phone.
+  let mode = store.get('mode', 'add');
+  function setMode(m) {
+    mode = m; store.set('mode', m);
+    $('modeAdd').classList.toggle('on', m === 'add');
+    $('modeRem').classList.toggle('on', m === 'remove');
+    document.body.classList.toggle('remove', m === 'remove');
+    last.code = null;
+    if (m === 'remove' && !$('newForm').hidden) closeNew();
+    status(m === 'remove' ? 'Λειτουργία ΑΦΑΙΡΕΣΗΣ: κάθε σάρωση −1' : 'Λειτουργία ΠΡΟΣΘΗΚΗΣ: κάθε σάρωση +1', m === 'remove' ? 'err' : 'ok');
+  }
+  $('modeAdd').onclick = () => setMode('add');
+  $('modeRem').onclick = () => setMode('remove');
 
   // Name lookup: open a Google search for the barcode; the user copies a title there and pastes it here.
   $('btnGoogle').onclick = () => {
@@ -366,6 +396,7 @@
       if (action === 'ping') return res({ ok: true });
       let code = String(d.barcode).trim(); if (/^\d{12}$/.test(code)) code = '0' + code;
       const p = db[code];
+      if (action === 'scan' && d.delta === -1) { if (!p) return res({ ok: false, error: 'δεν υπάρχει' }); if (p.qty < 1) return res({ ok: false, error: 'ήδη 0' }); p.qty--; return res({ ok: true, product: { ...p } }); }
       if (action === 'scan') { if (!p) return res({ ok: true, unknown: true, barcode: code, hint: code === '0019954151232' ? "D'Addario EXL170 Bass XL Set 45-100 Long" : '' }); p.qty++; return res({ ok: true, product: { ...p } }); }
       if (action === 'get') return res(p ? { ok: true, product: { ...p } } : { ok: true, unknown: true, barcode: code });
       if (action === 'create') { db[code] = { barcode: code, name: d.name, sku: d.sku, qty: d.qty }; return res({ ok: true, created: true, product: { ...db[code] } }); }
@@ -374,6 +405,7 @@
   }
 
   renderRecent();
+  setMode(mode); status('');
   const pending = store.get('pending', null);
   if (pending && pending.barcode) { showNew(pending); status('Συνέχεια: νέο barcode ' + pending.barcode); }
   if (!cfg && !MOCK) status('Πρώτη φορά: άνοιξε τον σύνδεσμο ρύθμισης ή πάτα ⚙', 'warn');
