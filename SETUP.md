@@ -18,6 +18,13 @@ Open this once on each phone, in Chrome:
 The page saves the settings and removes them from the address bar. Then: Chrome menu → **Add to Home screen**.
 Alternative: open the page and enter the URL and key under ⚙.
 
+## Admin page (`adminconfig.html`)
+`<PAGE URL>adminconfig.html`: log in with the Web app URL and the app key (or paste a setup link into the first field).
+The key is checked by the Apps Script (`ping`), so the page holds no secret; without the key it shows only the login box.
+After login: the setup QR and setup link for new devices (a PC opens the link in Chrome), links to the Sheet and the Apps Script, and the CSV links.
+"Να με θυμάται" keeps the login on that device; **Αποσύνδεση** removes it. After a key rotation every remembered login is refused and asks again.
+Test without a backend: `adminconfig.html?mock`, key `test`.
+
 ## CSV export (for Magento later)
 `<WEB APP URL>?format=csv&key=<APP KEY>` downloads the Products tab as CSV (`sku,barcode,name,qty`), always up to date.
 Only rows that have a SKU are included. Add `&all=1` to include every row. Treat the link like the key: anyone who has it can read the list.
